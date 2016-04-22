@@ -1,0 +1,9 @@
+# Assumes you have MSYS2 installed, with the following packages:
+#   mingw64/mingw-w64-x86_64-lua
+#   mingw64/mingw-w64-x86_64-nlopt
+
+LUA_INCLUDE = -DLUA_BUILD_AS_DLL
+LUA_MODULE_LIB = -Wl,-Bdynamic -llua.dll -lnlopt.dll -Wl,-Bstatic
+
+all:
+	c++ $(LUA_INCLUDE) -O3 -shared -fpic LuaNLopt.cpp -o LuaNLopt.dll $(LUA_MODULE_LIB)

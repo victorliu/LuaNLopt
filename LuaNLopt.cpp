@@ -1,4 +1,4 @@
-/* Lua adapter to NLopt 2.3
+/* Lua 5.3 adapter to NLopt 2.4.2
  *
  * Issue: 2012-10-14
  * Status: Beta
@@ -6,50 +6,77 @@
  * Copyright (c) 2012 Rochus Keller, rkeller@nmr.ch
  * Licensed under the GNU Lesser General Public License (LGPL).  
  * See also the COPYRIGHT and README file for details.
+ *
+ * Modified by Victor Liu, victor.liu@gmail.com
  */
 
-#include <Lua/lua.h>
-#include <Lua/lauxlib.h>
-#include <NLopt/nlopt.h>
+extern "C" {
+#include <lua.h>
+#include <lauxlib.h>
+#include <nlopt.h>
+}
 #include <vector>
+#include <limits>
 
 #define LIBNAME		"nlopt"
 #define LIBVERSION	LIBNAME " library for " LUA_VERSION
-static 	const char* nlopt_metaName = "nlopt_opt";
+static const char* nlopt_metaName = "nlopt_opt";
 
-static void setfieldint( lua_State *L, const char* key, int val )
-{
+static void setfieldint( lua_State *L, const char* key, int val ){
 	// Expects table on top of stack
 	lua_pushinteger( L, val );
 	lua_setfield( L, -2, key );
 }
 
-static int algorithm_name( lua_State *L )
-{
+static int algorithm_name( lua_State *L ){
 	const lua_Integer i = luaL_checkinteger( L, 1 );
 	if( i < 0 || i >= NLOPT_NUM_ALGORITHMS )
-		luaL_argerror( L, 1, "expecting nlopt.algorithm" );
+		luaL_argerror( L, 1, "expecting nlopt" );
 	lua_pushstring( L, nlopt_algorithm_name( static_cast<nlopt_algorithm>( i ) ) );
 	return 1;
 }
 
-static int srand( lua_State *L )
-{
+static int status_string( lua_State *L ){
 	const lua_Integer i = luaL_checkinteger( L, 1 );
-	if( i < 0 )
-		luaL_argerror( L, 1, "expecting unsigned integer" );
-	nlopt_srand( unsigned long( i ) );
+	if(i < 0 && i >= -5){
+		static const char *errtab[] = {
+			"Unknown failure",
+			"Invalid arguments",
+			"Out of memory",
+			"Roundoff limited",
+			"Forced stop"
+		};
+		lua_pushstring(L, errtab[-i-1]);
+		return 1;
+	}else if(i > 0 && i <= 6){
+		static const char *termtab[] = {
+			"Success",
+			"Stopval reached",
+			"Ftol reached",
+			"Xtol reached",
+			"Maxeval reached",
+			"Maxtime reached"
+		};
+		lua_pushstring(L, termtab[i-1]);
+		return 1;
+	}
 	return 0;
 }
 
-static int srand_time( lua_State *L )
-{
+static int srand( lua_State *L ){
+	const lua_Integer i = luaL_checkinteger( L, 1 );
+	if( i < 0 )
+		luaL_argerror( L, 1, "expecting unsigned integer" );
+	nlopt_srand( (unsigned long)( i ) );
+	return 0;
+}
+
+static int srand_time( lua_State *L ){
 	nlopt_srand_time();
 	return 0;
 }
 
-static int version( lua_State *L )
-{
+static int version( lua_State *L ){
 	int major, minor, bugfix;
 	nlopt_version( &major, &minor, &bugfix);
 	lua_pushinteger( L, major );
@@ -58,16 +85,14 @@ static int version( lua_State *L )
 	return 3;
 }
 
-struct nlopt_opt_holder
-{
+struct nlopt_opt_holder{
 	nlopt_opt d_obj;
 };
 
 static void* munge_on_destroy( void* f_data );
 static void* munge_on_copy( void* f_data );
 
-static int create( lua_State *L )
-{
+static int create( lua_State *L ){
 	const lua_Integer algorithm = luaL_checkinteger( L, 1 );
 	if( algorithm < 0 || algorithm >= NLOPT_NUM_ALGORITHMS )
 		luaL_argerror( L, 1, "expecting nlopt.algorithm" );
@@ -90,37 +115,33 @@ static int create( lua_State *L )
 	return 1;
 }
 
-static const luaL_Reg Reg[] =
-{
+static const luaL_Reg Reg[] = {
 	{ "create", create },
 	{ "version", version },
 	{ "srand_time", srand_time },
 	{ "srand", srand },
 	{ "algorithm_name", algorithm_name },
+	{ "status_string", status_string },
 	{ NULL,		NULL	}
 };
 
-static nlopt_opt_holder* check(lua_State *L, int narg = 1 )
-{
+static nlopt_opt_holder* check(lua_State *L, int narg = 1 ){
 	return static_cast<nlopt_opt_holder*>( luaL_checkudata( L, narg, nlopt_metaName ) );
 }
    
-static int finalize_nlopt_opt_s( lua_State *L )
-{
+static int finalize_nlopt_opt_s( lua_State *L ){
 	nlopt_opt_holder* holder = check( L );
 	nlopt_destroy( holder->d_obj );
 	return 0;
 }
 
-static int tostring( lua_State *L )
-{
+static int tostring( lua_State *L ){
 	nlopt_opt_holder* obj = check( L );
 	lua_pushfstring( L, "%s %p", nlopt_metaName, obj );
 	return 1;
 }
 
-static int copy( lua_State *L )
-{
+static int copy( lua_State *L ){
 	nlopt_opt_holder* rhs = check( L );
 	nlopt_opt obj = nlopt_copy( rhs->d_obj );
 	if( obj == NULL )
@@ -136,28 +157,24 @@ static int copy( lua_State *L )
 	return 1;
 }
 
-static int get_algorithm( lua_State *L )
-{
+static int get_algorithm( lua_State *L ){
 	nlopt_opt_holder* holder = check( L );
 	lua_pushinteger( L, nlopt_get_algorithm( holder->d_obj ) );
 	return 1;
 }
 
-static int get_dimension( lua_State *L )
-{
+static int get_dimension( lua_State *L ){
 	nlopt_opt_holder* holder = check( L );
 	lua_pushinteger( L, nlopt_get_dimension( holder->d_obj ) );
 	return 1;
 }
 
-static int set_lower_bounds( lua_State *L )
-{
+static int set_lower_bounds( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	luaL_checktype( L, 2, LUA_TTABLE );
 	const int n = nlopt_get_dimension( holder->d_obj );
 	std::vector<double> lb( n );
-	for( int i = 0; i < n; i++ )
-	{
+	for( int i = 0; i < n; i++ ){
 		lua_pushinteger( L, i + 1 );
 		lua_gettable( L, 2 );
 		lb[i] = lua_tonumber( L, -1 );
@@ -167,14 +184,12 @@ static int set_lower_bounds( lua_State *L )
 	return 1;
 }
 
-static int set_upper_bounds( lua_State *L )
-{
+static int set_upper_bounds( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	luaL_checktype( L, 2, LUA_TTABLE );
 	const int n = nlopt_get_dimension( holder->d_obj );
 	std::vector<double> lb( n );
-	for( int i = 0; i < n; i++ )
-	{
+	for( int i = 0; i < n; i++ ){
 		lua_pushinteger( L, i + 1 );
 		lua_gettable( L, 2 );
 		lb[i] = lua_tonumber( L, -1 );
@@ -184,16 +199,14 @@ static int set_upper_bounds( lua_State *L )
 	return 1;
 }
 
-static int set_lower_bounds1( lua_State *L )
-{
+static int set_lower_bounds1( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const double lb = luaL_checknumber( L, 2 );
 	lua_pushinteger( L, nlopt_set_lower_bounds1( holder->d_obj, lb ) );
 	return 1;
 }
 
-static int set_upper_bounds1( lua_State *L )
-{
+static int set_upper_bounds1( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const double lb = luaL_checknumber( L, 2 );
 	lua_pushinteger( L, nlopt_set_upper_bounds1( holder->d_obj, lb ) );
@@ -215,541 +228,291 @@ static int get_lower_bounds( lua_State *L )
 	return 2;
 }
 
-static int get_upper_bounds( lua_State *L )
-{
+static int get_upper_bounds( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const int n = nlopt_get_dimension( holder->d_obj );
 	std::vector<double> lb( n );
 	lua_pushinteger( L, nlopt_get_upper_bounds( holder->d_obj, &lb[0] ) );
 	lua_createtable( L, n, 0 );
-	for( int i = 0; i < n; i++ )
-	{
+	for( int i = 0; i < n; i++ ){
 		lua_pushnumber( L, lb[i] );
 		lua_rawseti( L, -2, i + 1 );
 	}
 	return 2;
 }
 
-struct callback_context
-{
+struct callback_context{
 	lua_State *L;
 	int ref;
 };
 
-static double func(unsigned n, const double* x, double* grad, void* f_data)
-{
+static double func(unsigned n, const double* x, double* grad, void* f_data){
 	// x points to an array of length n
 	// if the argument grad is not NULL, then grad points to an array of length n
 	// f_data points to a callback_context
+	callback_context* ctx = static_cast<callback_context*>(f_data);
+	if(NULL == ctx){ return std::numeric_limits<double>::quiet_NaN(); }
+	lua_State *L = ctx->L;
+	
+	const int stack0 = lua_gettop(L);
+	
+	lua_rawgeti(L, LUA_REGISTRYINDEX, ctx->ref); // stack: f
+	if(!lua_isfunction(L, -1)){
+		lua_pop(L, 1);
+		return std::numeric_limits<double>::quiet_NaN();
+	}
 
-	callback_context* ctx = static_cast<callback_context*>( f_data );
-	if( ctx )
-	{
-		lua_rawgeti( ctx->L, LUA_REGISTRYINDEX, ctx->ref );
-		const int t = lua_gettop( ctx->L );
-
-		lua_pushliteral( ctx->L, "f" );
-		lua_rawget( ctx->L, t );
-		if( !lua_isfunction( ctx->L, -1 ) )
-		{
-			lua_pop( ctx->L, 2 ); // t, f
-			return 0.0; // RISK: Fehler melden?
+	lua_createtable(L, n, 0);
+	for(int i = 0; i < n; ++i){
+		lua_pushnumber(L, x[i]);
+		lua_rawseti(L, -2, i+1);
+	} // stack: f, x
+	lua_pushboolean(L, NULL != grad);
+	
+	if(LUA_OK != lua_pcall(L, 2, LUA_MULTRET, 0)){
+		return luaL_error(L, "Error in callback: %s", lua_tostring(L, -1));
+	}
+	// stack: result, grad | nil
+	const double res = lua_tonumber(L, stack0+1);
+	if(NULL != grad){
+		if(!lua_istable(L, stack0+2)){
+			luaL_error(L, "Error in callback: expected gradient");
+			return std::numeric_limits<double>::quiet_NaN();
 		}
-		lua_pushinteger( ctx->L, n );
-
-		lua_pushliteral( ctx->L, "x" );
-		lua_rawget( ctx->L, t );
-		if( !lua_istable( ctx->L, -1 ) )
-		{
-			lua_pop( ctx->L, 1 );
-			lua_newtable( ctx->L );
-			lua_pushliteral( ctx->L, "x" );
-			lua_pushvalue( ctx->L, -2 );
-			lua_rawset( ctx->L, t );
+		for(int i = 0; i < n; ++i){
+			lua_rawgeti(L, stack0+2, i+1);
+			grad[i] = lua_tonumber(L, -1);
+			lua_pop(L, 1);
 		}
-		const int xt = lua_gettop( ctx->L );
-		unsigned int i;
-		for( i = 0; i < n; i++ )
-		{
-			lua_pushnumber( ctx->L, x[i] );
-			lua_rawseti( ctx->L, xt, i + 1 );
-		}
-		// stack: t, f, n, x
-		if( grad )
-		{
-			lua_pushliteral( ctx->L, "grad" );
-			lua_rawget( ctx->L, t );
-			if( !lua_istable( ctx->L, -1 ) )
-			{
-				lua_pop( ctx->L, 1 );
-				lua_newtable( ctx->L );
-				lua_pushliteral( ctx->L, "grad" );
-				lua_pushvalue( ctx->L, -2 );
-				lua_rawset( ctx->L, t );
-			}
-			const int gradt = lua_gettop( ctx->L );
-			for( i = 0; i < n; i++ )
-			{
-				lua_pushnumber( ctx->L, grad[i] );
-				lua_rawseti( ctx->L, gradt, i + 1 );
-			}
-		}else
-		{
-			lua_pushliteral( ctx->L, "grad" );
-			lua_pushnil( ctx->L );
-			lua_rawset( ctx->L, t );
-			lua_pushnil( ctx->L );
-		}
-		// stack: t, f, n, x, grad | nil
-		lua_pushliteral( ctx->L, "f_data" );
-		lua_rawget( ctx->L, t );
-		// stack: t, f, n, x, grad | nil, f_data | nil
-		if( lua_pcall( ctx->L, 4, 1, 0 ) == 0 )
-		{
-			// stack: t, res
-			const double res = lua_tonumber( ctx->L, -1 );
-			lua_pop( ctx->L, 1 );
-			// stack: t
-			if( grad )
-			{
-				lua_pushliteral( ctx->L, "grad" );
-				lua_rawget( ctx->L, t );
-				const int gradt = lua_gettop( ctx->L );
-				for( i = 0; i < n; i++ )
-				{
-					lua_rawgeti( ctx->L, gradt, i + 1 );
-					grad[i] = lua_tonumber( ctx->L, -1 );
-					lua_pop( ctx->L, 1 );
-				}
-				lua_pop( ctx->L, 1 );
-			}
-			lua_pop( ctx->L, 1 );
-			return res;
-		}else
-		{
-			// stack: t, msg
-			lua_pop( ctx->L, 2 );
-			return 0.0; // RISK: Fehler melden?
-		}
-	}else
-		return 0.0; // RISK: Fehler melden?
+	}
+	lua_settop(L, stack0);
+	return res;
 }
 
-static void* munge_on_destroy( void* f_data )
-{
+static void* munge_on_destroy( void* f_data ){
 	callback_context* ctx = static_cast<callback_context*>( f_data );
-	if( ctx )
-	{
-		luaL_unref( ctx->L, LUA_REGISTRYINDEX, ctx->ref );
+	if(NULL != ctx){
+		luaL_unref(ctx->L, LUA_REGISTRYINDEX, ctx->ref);
 		delete ctx;
 	}
 	return 0;
 }
 
-static void* munge_on_copy( void* f_data )
-{
+static void* munge_on_copy( void* f_data ){
 	callback_context* ctx = static_cast<callback_context*>( f_data );
-	if( ctx )
-	{
-		lua_rawgeti( ctx->L, LUA_REGISTRYINDEX, ctx->ref );
-		const int source = lua_gettop( ctx->L );
-		callback_context* ctx_new = new callback_context;
-		ctx_new->L = ctx->L;
-		lua_newtable( ctx->L );
-		const int t = lua_gettop( ctx->L );
-		lua_pushvalue( ctx->L, t );
-		ctx_new->ref = luaL_ref( ctx->L, LUA_REGISTRYINDEX );
+	if(NULL == ctx){ return NULL; }
 
-		lua_pushliteral( ctx->L, "f" );
-		lua_pushvalue( ctx->L, -1 );
-		lua_rawget( ctx->L, source );
-		lua_rawset( ctx->L, t );
-
-		lua_pushliteral( ctx->L, "f_data" );
-		lua_pushvalue( ctx->L, -1 );
-		lua_rawget( ctx->L, source );
-		lua_rawset( ctx->L, t );
-	
-		lua_pop( ctx->L, 2 ); // source and t
-		return ctx_new;
-	}else
-		return NULL;
+	lua_rawgeti(ctx->L, LUA_REGISTRYINDEX, ctx->ref);
+	callback_context* ctx_new = new callback_context;
+	ctx_new->L = ctx->L;
+	ctx_new->ref = luaL_ref(ctx->L, LUA_REGISTRYINDEX);
+	return ctx_new;
 }
 
-static int set_min_objective( lua_State *L )
-{
+static int set_min_objective( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	luaL_checktype( L, 2, LUA_TFUNCTION );
 
 	callback_context* ctx = new callback_context;
 	ctx->L = L;
-	lua_newtable( L );
-	const int t = lua_gettop( L );
-	lua_pushvalue( L, t );
-	ctx->ref = luaL_ref( L, LUA_REGISTRYINDEX );
-
-	lua_pushliteral( L, "f" );
-	lua_pushvalue( L, 2 );
-	lua_rawset( L, t );
-
-	lua_pushliteral( L, "f_data" );
-	lua_pushvalue( L, 3 );
-	lua_rawset( L, t );
-
-	lua_pop( L, 1 ); // t
+	lua_pushvalue(L, 2);
+	ctx->ref = luaL_ref(L, LUA_REGISTRYINDEX);
 
 	lua_pushinteger( L, nlopt_set_min_objective( holder->d_obj, func, ctx ) );
 
-	// NOTE: der call ist asynchron; in munge_on_destroy wieder freigegeben.
+	// NOTE: the call is asynchronous; unref in munge_on_destroy.
 	return 1;
 }
 
-static int set_max_objective( lua_State *L )
-{
+static int set_max_objective( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	luaL_checktype( L, 2, LUA_TFUNCTION );
 
 	callback_context* ctx = new callback_context;
 	ctx->L = L;
-	lua_newtable( L );
-	const int t = lua_gettop( L );
-	lua_pushvalue( L, t );
-	ctx->ref = luaL_ref( L, LUA_REGISTRYINDEX );
-
-	lua_pushliteral( L, "f" );
-	lua_pushvalue( L, 2 );
-	lua_rawset( L, t );
-
-	lua_pushliteral( L, "f_data" );
-	lua_pushvalue( L, 3 );
-	lua_rawset( L, t );
-
-	lua_pop( L, 1 ); // t
+	lua_pushvalue(L, 2);
+	ctx->ref = luaL_ref(L, LUA_REGISTRYINDEX);
 
 	lua_pushinteger( L, nlopt_set_max_objective( holder->d_obj, func, ctx ) );
 
-	// NOTE: der call ist asynchron; in munge_on_destroy wieder freigegeben.
+	// NOTE: the call is asynchronous; unref in munge_on_destroy.
 	return 1;
 }
 
-static int add_inequality_constraint( lua_State *L )
-{
+static int add_inequality_constraint( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	luaL_checktype( L, 2, LUA_TFUNCTION );
 
 	callback_context* ctx = new callback_context;
 	ctx->L = L;
-	lua_newtable( L );
-	const int t = lua_gettop( L );
-	lua_pushvalue( L, t );
-	ctx->ref = luaL_ref( L, LUA_REGISTRYINDEX );
+	lua_pushvalue(L, 2);
+	ctx->ref = luaL_ref(L, LUA_REGISTRYINDEX);
 
-	lua_pushliteral( L, "f" );
-	lua_pushvalue( L, 2 );
-	lua_rawset( L, t );
-
-	lua_pushliteral( L, "f_data" );
-	lua_pushvalue( L, 3 );
-	lua_rawset( L, t );
-
-	lua_pop( L, 1 ); // t
-
-	lua_pushinteger( L, nlopt_add_inequality_constraint( holder->d_obj, func, ctx, lua_tonumber( L, 4 ) ) );
-
+	lua_pushinteger(L, nlopt_add_inequality_constraint( holder->d_obj, func, ctx, lua_tonumber(L, 3) ));
 	return 1;
 }
 
-static int add_equality_constraint( lua_State *L )
-{
+static int add_equality_constraint( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	luaL_checktype( L, 2, LUA_TFUNCTION );
 
 	callback_context* ctx = new callback_context;
 	ctx->L = L;
-	lua_newtable( L );
-	const int t = lua_gettop( L );
-	lua_pushvalue( L, t );
-	ctx->ref = luaL_ref( L, LUA_REGISTRYINDEX );
+	lua_pushvalue(L, 2);
+	ctx->ref = luaL_ref(L, LUA_REGISTRYINDEX);
 
-	lua_pushliteral( L, "f" );
-	lua_pushvalue( L, 2 );
-	lua_rawset( L, t );
-
-	lua_pushliteral( L, "f_data" );
-	lua_pushvalue( L, 3 );
-	lua_rawset( L, t );
-
-	lua_pop( L, 1 ); // t
-
-	lua_pushinteger( L, nlopt_add_equality_constraint( holder->d_obj, func, ctx, lua_tonumber( L, 4 ) ) );
-
+	lua_pushinteger(L, nlopt_add_equality_constraint( holder->d_obj, func, ctx, lua_tonumber(L, 3) ));
 	return 1;
 }
 
-static int remove_inequality_constraints( lua_State *L )
-{
+static int remove_inequality_constraints( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	lua_pushinteger( L, nlopt_remove_inequality_constraints( holder->d_obj ) );
 	return 1;
 }
 
-static int remove_equality_constraints( lua_State *L )
-{
+static int remove_equality_constraints( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	lua_pushinteger( L, nlopt_remove_equality_constraints( holder->d_obj ) );
 	return 1;
 }
 
-static void mfunc(unsigned m, double *result, unsigned n, const double* x, double* grad, void* f_data)
-{
+static void mfunc(unsigned m, double *result, unsigned n, const double* x, double* grad, void* f_data){
 	// x points to an array of length n
 	// result, an array of length m
 	// if the argument grad is not NULL, then grad points to an array of length m*n
 	// f_data points to a callback_context
+	callback_context* ctx = static_cast<callback_context*>(f_data);
+	if(NULL == ctx){ return; }
+	lua_State *L = ctx->L;
 
-	callback_context* ctx = static_cast<callback_context*>( f_data );
-	if( ctx )
-	{
-		lua_rawgeti( ctx->L, LUA_REGISTRYINDEX, ctx->ref );
-		const int t = lua_gettop( ctx->L );
+	const int stack0 = lua_gettop(L);
 
-		lua_pushliteral( ctx->L, "f" );
-		lua_rawget( ctx->L, t );
-		if( !lua_isfunction( ctx->L, -1 ) )
-		{
-			lua_pop( ctx->L, 2 ); // t, f
-			return; // RISK: Fehler melden?
-		}
+	lua_rawgeti(L, LUA_REGISTRYINDEX, ctx->ref);
 
-		lua_pushinteger( ctx->L, m );
+	if(!lua_isfunction(L, -1)){ lua_pop(L, 1); return; }
 
-		lua_pushliteral( ctx->L, "result" );
-		lua_rawget( ctx->L, t );
-		if( !lua_istable( ctx->L, -1 ) )
-		{
-			lua_pop( ctx->L, 1 );
-			lua_newtable( ctx->L );
-			lua_pushliteral( ctx->L, "result" );
-			lua_pushvalue( ctx->L, -2 );
-			lua_rawset( ctx->L, t );
-		}
-		const int resultt = lua_gettop( ctx->L );
-		unsigned int i;
-		for( i = 0; i < m; i++ )
-		{
-			lua_pushnumber( ctx->L, result[i] );
-			lua_rawseti( ctx->L, resultt, i + 1 );
-		}
-		// stack: t, f, m, result
+	lua_pushinteger(L, m); // stack: f, m
 
-		lua_pushinteger( ctx->L, n );
+	lua_createtable(L, n, 0);
+	for(int i = 0; i < n; ++i){
+		lua_pushnumber(L, x[i]);
+		lua_rawseti(L, -2, i+1);
+	} // stack: f, x
+	lua_pushboolean(L, NULL != grad); // stack: f, m, x, grad?
 
-		lua_pushliteral( ctx->L, "x" );
-		lua_rawget( ctx->L, t );
-		if( !lua_istable( ctx->L, -1 ) )
-		{
-			lua_pop( ctx->L, 1 );
-			lua_newtable( ctx->L );
-			lua_pushliteral( ctx->L, "x" );
-			lua_pushvalue( ctx->L, -2 );
-			lua_rawset( ctx->L, t );
-		}
-		const int xt = lua_gettop( ctx->L );
-		for( i = 0; i < n; i++ )
-		{
-			lua_pushnumber( ctx->L, x[i] );
-			lua_rawseti( ctx->L, xt, i + 1 );
-		}
-		// stack: t, f, m, result, n, x
-		if( grad )
-		{
-			lua_pushliteral( ctx->L, "grad" );
-			lua_rawget( ctx->L, t );
-			if( !lua_istable( ctx->L, -1 ) )
-			{
-				lua_pop( ctx->L, 1 );
-				lua_newtable( ctx->L );
-				lua_pushliteral( ctx->L, "grad" );
-				lua_pushvalue( ctx->L, -2 );
-				lua_rawset( ctx->L, t );
-			}
-			const int gradt = lua_gettop( ctx->L );
-			for( i = 0; i < ( n * m ); i++ )
-			{
-				lua_pushnumber( ctx->L, grad[i] );
-				lua_rawseti( ctx->L, gradt, i + 1 );
-			}
-		}else
-		{
-			lua_pushliteral( ctx->L, "grad" );
-			lua_pushnil( ctx->L );
-			lua_rawset( ctx->L, t );
-			lua_pushnil( ctx->L );
-		}
-		// stack: t, f, m, result, n, x, grad | nil
-		lua_pushliteral( ctx->L, "f_data" );
-		lua_rawget( ctx->L, t );
-		// stack: t, f, m, result, n, x, grad | nil, f_data | nil
-		if( lua_pcall( ctx->L, 6, 0, 0 ) == 0 )
-		{
-			// stack: t
-			lua_pushliteral( ctx->L, "result" );
-			lua_rawget( ctx->L, t );
-			const int resultt = lua_gettop( ctx->L );
-			for( i = 0; i < m; i++ )
-			{
-				lua_rawgeti( ctx->L, resultt, i + 1 );
-				result[i] = lua_tonumber( ctx->L, -1 );
-				lua_pop( ctx->L, 1 );
-			}
-			if( grad )
-			{
-				lua_pushliteral( ctx->L, "grad" );
-				lua_rawget( ctx->L, t );
-				const int gradt = lua_gettop( ctx->L );
-				for( i = 0; i < ( n * m ); i++ )
-				{
-					lua_rawgeti( ctx->L, gradt, i + 1 );
-					grad[i] = lua_tonumber( ctx->L, -1 );
-					lua_pop( ctx->L, 1 );
-				}
-				lua_pop( ctx->L, 1 );
-			}
-
-			lua_pop( ctx->L, 1 );
+	if(LUA_OK != lua_pcall(L, 3, LUA_MULTRET, 0)){
+		luaL_error(L, "Error in callback: %s", lua_tostring(L, -1));
+		return;
+	}
+	// stack: res, grad | nil
+	if(!lua_istable(L, stack0+1)){
+		luaL_error(L, "Expected returned result from callback");
+		return;
+	}
+	for(int i = 0; i < m; ++i){
+		lua_rawgeti(L, stack0+1, i+1);
+		result[i] = lua_tonumber(L, -1);
+		lua_pop(L, 1);
+	}
+	if(NULL != grad){
+		if(!lua_istable(L, stack0+2)){
+			luaL_error(L, "Expected returned gradient from callback");
 			return;
-		}else
-		{
-			// stack: t, msg
-			lua_pop( ctx->L, 2 );
-			return; // RISK: Fehler melden?
 		}
-	}else
-		return; // RISK: Fehler melden?
+		for(int i = 0; i < (n*m); ++i){
+			lua_rawgeti(L, stack0+2, i+1);
+			grad[i] = lua_tonumber(L, -1);
+			lua_pop(L, 1);
+		}
+	}
+
+	lua_settop(L, stack0);
 }
 
-static int add_inequality_mconstraint( lua_State *L )
-{
+static int add_inequality_mconstraint( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const int m = (const int)luaL_checkinteger( L, 2 );
-	luaL_checktype( L, 3, LUA_TFUNCTION );
-	if( !lua_isnil( L, 5 ) && lua_istable( L, 5 ) )
-		luaL_argerror( L, 5, "expecting table or nil" );
-
+	luaL_checktype(L, 3, LUA_TFUNCTION);
+	if(!(lua_isnil(L, 4) || lua_istable(L, 4 ))){
+		return luaL_argerror(L, 4, "expecting table of tolerances or nil");
+	}
 	callback_context* ctx = new callback_context;
 	ctx->L = L;
-	lua_newtable( L );
-	const int t = lua_gettop( L );
-	lua_pushvalue( L, t );
-	ctx->ref = luaL_ref( L, LUA_REGISTRYINDEX );
+	lua_pushvalue(L, 3);
+	ctx->ref = luaL_ref(L, LUA_REGISTRYINDEX);
 
-	lua_pushliteral( L, "f" );
-	lua_pushvalue( L, 3 );
-	lua_rawset( L, t );
-
-	lua_pushliteral( L, "f_data" );
-	lua_pushvalue( L, 4 );
-	lua_rawset( L, t );
-
-	lua_pop( L, 1 ); // t
-
-	const double *tol = 0;
-
-	if( lua_isnil( L, 5 ) )
-		lua_pushinteger( L, nlopt_add_inequality_mconstraint( holder->d_obj, m, mfunc, ctx, 0 ) );
-	else
-	{
-		std::vector<double> tol( m );
-		for( int i = 0; i < m; i++ )
-		{
-			lua_pushinteger( L, i + 1 );
-			lua_gettable( L, 5 );
-			tol[i] = lua_tonumber( L, -1 );
-			lua_pop( L, 1 );
+	if(lua_isnil(L, 4)){
+		lua_pushinteger(L, nlopt_add_inequality_mconstraint( holder->d_obj, m, mfunc, ctx, NULL));
+	}else{
+		std::vector<double> tol(m);
+		for(int i = 0; i < m; ++i){
+			lua_pushinteger(L, i+1);
+			lua_gettable(L, 4);
+			tol[i] = lua_tonumber(L, -1);
+			lua_pop(L, 1);
 		}
-		lua_pushinteger( L, nlopt_add_inequality_mconstraint( holder->d_obj, lua_tonumber( L, 2 ), mfunc, ctx, &tol[0] ) );
+		lua_pushinteger( L, nlopt_add_inequality_mconstraint( holder->d_obj, m, mfunc, ctx, &tol[0] ) );
 	}
 
 	return 1;
 }
 
-static int add_equality_mconstraint( lua_State *L )
-{
+static int add_equality_mconstraint( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const int m = (const int)luaL_checkinteger( L, 2 );
-	luaL_checktype( L, 3, LUA_TFUNCTION );
-	if( !lua_isnil( L, 5 ) && lua_istable( L, 5 ) )
-		luaL_argerror( L, 5, "expecting table or nil" );
-
+	luaL_checktype(L, 3, LUA_TFUNCTION);
+	if(!(lua_isnil(L, 4) || lua_istable(L, 4 ))){
+		return luaL_argerror(L, 4, "expecting table of tolerances or nil");
+	}
 	callback_context* ctx = new callback_context;
 	ctx->L = L;
-	lua_newtable( L );
-	const int t = lua_gettop( L );
-	lua_pushvalue( L, t );
-	ctx->ref = luaL_ref( L, LUA_REGISTRYINDEX );
+	lua_pushvalue(L, 3);
+	ctx->ref = luaL_ref(L, LUA_REGISTRYINDEX);
 
-	lua_pushliteral( L, "f" );
-	lua_pushvalue( L, 3 );
-	lua_rawset( L, t );
-
-	lua_pushliteral( L, "f_data" );
-	lua_pushvalue( L, 4 );
-	lua_rawset( L, t );
-
-	lua_pop( L, 1 ); // t
-
-	const double *tol = 0;
-
-	if( lua_isnil( L, 5 ) )
-		lua_pushinteger( L, nlopt_add_equality_mconstraint( holder->d_obj, m, mfunc, ctx, 0 ) );
-	else
-	{
-		std::vector<double> tol( m );
-		for( int i = 0; i < m; i++ )
-		{
-			lua_pushinteger( L, i + 1 );
-			lua_gettable( L, 5 );
-			tol[i] = lua_tonumber( L, -1 );
-			lua_pop( L, 1 );
+	if(lua_isnil(L, 4)){
+		lua_pushinteger(L, nlopt_add_inequality_mconstraint( holder->d_obj, m, mfunc, ctx, NULL));
+	}else{
+		std::vector<double> tol(m);
+		for(int i = 0; i < m; ++i){
+			lua_pushinteger(L, i+1);
+			lua_gettable(L, 4);
+			tol[i] = lua_tonumber(L, -1);
+			lua_pop(L, 1);
 		}
-		lua_pushinteger( L, nlopt_add_equality_mconstraint( holder->d_obj, lua_tonumber( L, 2 ), mfunc, ctx, &tol[0] ) );
+		lua_pushinteger( L, nlopt_add_equality_mconstraint( holder->d_obj, m, mfunc, ctx, &tol[0] ) );
 	}
 
 	return 1;
 }
 
-static int set_stopval( lua_State *L )
-{
+static int set_stopval( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const double val = luaL_checknumber( L, 2 );
 	lua_pushinteger( L, nlopt_set_stopval( holder->d_obj, val ) );
 	return 1;
 }
 
-static int get_stopval( lua_State *L )
-{
+static int get_stopval( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	lua_pushnumber( L, nlopt_get_stopval( holder->d_obj ) );
 	return 1;
 }
 
-static int set_ftol_rel( lua_State *L )
-{
+static int set_ftol_rel( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const double val = luaL_checknumber( L, 2 );
 	lua_pushinteger( L, nlopt_set_ftol_rel( holder->d_obj, val ) );
 	return 1;
 }
 
-static int get_ftol_rel( lua_State *L )
-{
+static int get_ftol_rel( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	lua_pushnumber( L, nlopt_get_ftol_rel( holder->d_obj ) );
 	return 1;
 }
 
-static int set_ftol_abs( lua_State *L )
-{
+static int set_ftol_abs( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const double val = luaL_checknumber( L, 2 );
 	lua_pushinteger( L, nlopt_set_ftol_abs( holder->d_obj, val ) );
@@ -763,29 +526,25 @@ static int get_ftol_abs( lua_State *L )
 	return 1;
 }
 
-static int set_xtol_rel( lua_State *L )
-{
+static int set_xtol_rel( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const double val = luaL_checknumber( L, 2 );
 	lua_pushinteger( L, nlopt_set_xtol_rel( holder->d_obj, val ) );
 	return 1;
 }
 
-static int get_xtol_rel( lua_State *L )
-{
+static int get_xtol_rel( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	lua_pushnumber( L, nlopt_get_xtol_rel( holder->d_obj ) );
 	return 1;
 }
 
-static int set_xtol_abs( lua_State *L )
-{
+static int set_xtol_abs( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	luaL_checktype( L, 2, LUA_TTABLE );
 	const int n = nlopt_get_dimension( holder->d_obj );
 	std::vector<double> lb( n );
-	for( int i = 0; i < n; i++ )
-	{
+	for( int i = 0; i < n; i++ ){
 		lua_pushinteger( L, i + 1 );
 		lua_gettable( L, 2 );
 		lb[i] = lua_tonumber( L, -1 );
@@ -795,90 +554,77 @@ static int set_xtol_abs( lua_State *L )
 	return 1;
 }
 
-static int get_xtol_abs( lua_State *L )
-{
+static int get_xtol_abs( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const int n = nlopt_get_dimension( holder->d_obj );
 	std::vector<double> lb( n );
 	lua_pushinteger( L, nlopt_get_xtol_abs( holder->d_obj, &lb[0] ) );
 	lua_createtable( L, n, 0 );
-	for( int i = 0; i < n; i++ )
-	{
+	for(int i = 0; i < n; ++i){
 		lua_pushnumber( L, lb[i] );
 		lua_rawseti( L, -2, i + 1 );
 	}
 	return 2;
 }
 
-static int set_xtol_abs1( lua_State *L )
-{
+static int set_xtol_abs1( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const double tol = luaL_checknumber( L, 2 );
 	lua_pushinteger( L, nlopt_set_xtol_abs1( holder->d_obj, tol ) );
 	return 1;
 }
 
-static int set_maxeval( lua_State *L )
-{
+static int set_maxeval( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const int val = luaL_checkinteger( L, 2 );
 	lua_pushinteger( L, nlopt_set_maxeval( holder->d_obj, val ) );
 	return 1;
 }
 
-static int get_maxeval( lua_State *L )
-{
+static int get_maxeval( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	lua_pushinteger( L, nlopt_get_maxeval( holder->d_obj ) );
 	return 1;
 }
 
-static int set_maxtime( lua_State *L )
-{
+static int set_maxtime( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const double val = luaL_checknumber( L, 2 );
 	lua_pushinteger( L, nlopt_set_maxtime( holder->d_obj, val ) );
 	return 1;
 }
 
-static int get_maxtime( lua_State *L )
-{
+static int get_maxtime( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	lua_pushnumber( L, nlopt_get_maxtime( holder->d_obj ) );
 	return 1;
 }
 
-static int force_stop( lua_State *L )
-{
+static int force_stop( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	lua_pushnumber( L, nlopt_force_stop( holder->d_obj ) );
 	return 1;
 }
 
-static int set_force_stop( lua_State *L )
-{
+static int set_force_stop( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const int val = luaL_checkinteger( L, 2 );
 	lua_pushinteger( L, nlopt_set_force_stop( holder->d_obj, val ) );
 	return 1;
 }
 
-static int get_force_stop( lua_State *L )
-{
+static int get_force_stop( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	lua_pushinteger( L, nlopt_get_force_stop( holder->d_obj ) );
 	return 1;
 }
 
-static int optimize( lua_State *L )
-{
+static int optimize( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	luaL_checktype( L, 2, LUA_TTABLE );
 	const int n = nlopt_get_dimension( holder->d_obj );
 	std::vector<double> x( n );
-	int i;
-	for( i = 0; i < n; i++ )
-	{
+	for(int i = 0; i < n; i++ ){
 		lua_pushinteger( L, i + 1 );
 		lua_gettable( L, 2 );
 		x[i] = lua_tonumber( L, -1 );
@@ -886,32 +632,28 @@ static int optimize( lua_State *L )
 	}
 	double opt_f;
 	lua_pushinteger( L, nlopt_optimize( holder->d_obj, &x[0], &opt_f ) );
-	lua_pushnumber( L, opt_f );
-	for( i = 0; i < n; i++ )
-	{
-		lua_pushinteger( L, i + 1 );
-		lua_pushnumber( L, x[i] );
-		lua_settable( L, 2 );
+	lua_createtable(L, n, 0);
+	for(int i = 0; i < n; i++ ){
+		lua_pushnumber(L, x[i]);
+		lua_rawseti(L, -2, i+1);
 	}
-	return 2;
+	lua_pushnumber( L, opt_f );
+	return 3;
 }
 
-static int set_local_optimizer( lua_State *L )
-{
+static int set_local_optimizer( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	nlopt_opt_holder* local_opt = check( L, 2 );
 	lua_pushinteger( L, nlopt_set_local_optimizer(holder->d_obj, local_opt->d_obj ) );
 	return 1;
 }
 
-static int set_initial_step( lua_State *L )
-{
+static int set_initial_step( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	luaL_checktype( L, 2, LUA_TTABLE );
 	const int n = nlopt_get_dimension( holder->d_obj );
 	std::vector<double> dx( n );
-	for( int i = 0; i < n; i++ )
-	{
+	for( int i = 0; i < n; i++ ){
 		lua_pushinteger( L, i + 1 );
 		lua_gettable( L, 2 );
 		dx[i] = lua_tonumber( L, -1 );
@@ -921,23 +663,20 @@ static int set_initial_step( lua_State *L )
 	return 1;
 }
 
-static int set_initial_step1( lua_State *L )
-{
+static int set_initial_step1( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const double dx = luaL_checknumber( L, 2 );
 	lua_pushinteger( L, nlopt_set_initial_step1( holder->d_obj, dx ) );
 	return 1;
 }
 
-static int get_initial_step( lua_State *L )
-{
+static int get_initial_step( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	luaL_checktype( L, 2, LUA_TTABLE );
 	const int n = nlopt_get_dimension( holder->d_obj );
 	std::vector<double> x( n );
 	int i;
-	for( i = 0; i < n; i++ )
-	{
+	for( i = 0; i < n; i++ ){
 		lua_pushinteger( L, i + 1 );
 		lua_gettable( L, 2 );
 		x[i] = lua_tonumber( L, -1 );
@@ -954,8 +693,7 @@ static int get_initial_step( lua_State *L )
 	return 2;
 }
 
-static int set_population( lua_State *L )
-{
+static int set_population( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const lua_Integer pop = luaL_checkinteger( L, 2 );
 	if( pop < 0 )
@@ -964,8 +702,7 @@ static int set_population( lua_State *L )
 	return 1;
 }
 
-static int set_vector_storage( lua_State *L )
-{
+static int set_vector_storage( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	const lua_Integer M = luaL_checkinteger( L, 2 );
 	if( M < 0 )
@@ -974,8 +711,7 @@ static int set_vector_storage( lua_State *L )
 	return 1;
 }
 
-static int get_vector_storage( lua_State *L )
-{
+static int get_vector_storage( lua_State *L ){
 	nlopt_opt_holder* holder = check( L, 1 );
 	lua_pushnumber( L, nlopt_get_vector_storage( holder->d_obj ) );
 	return 1;
@@ -984,8 +720,7 @@ static int get_vector_storage( lua_State *L )
 // Everything implemented but "Preconditioning with approximate Hessians" which is 
 // described as "somewhat experimental" by the authors of NLopt
 
-static const luaL_Reg Methods[] =
-{
+static const luaL_Reg Methods[] = {
 	{ "get_vector_storage", get_vector_storage },
 	{ "set_vector_storage", set_vector_storage },
 	{ "set_population", set_population },
@@ -1032,8 +767,7 @@ static const luaL_Reg Methods[] =
 	{ NULL,	NULL }
 };
 
-static void install_nlopt_opt_s( lua_State *L, const luaL_reg* ms )
-{
+static void install_nlopt_opt_s( lua_State *L, const luaL_Reg* ms ){
     const int stackTest = lua_gettop(L);
 
     if( luaL_newmetatable( L, nlopt_metaName ) == 0 )
@@ -1044,14 +778,9 @@ static void install_nlopt_opt_s( lua_State *L, const luaL_reg* ms )
 	lua_newtable(L);
 	const int methodTable = lua_gettop(L);
 
-    // Mache die methodTable unter dem publicName global zugänglich.
-	lua_pushstring(L, nlopt_metaName );
-	lua_pushvalue(L, methodTable );
-	lua_settable(L, LUA_GLOBALSINDEX ); // TODO: ev. stattdessen als Modul einer Tabelle zuweisen
-
-    // setze Attribut __metatable von meta. Dies ist der Wert, der
-	// von getmetatable( obj ) zurückgegeben wird. Trick, um echten Metatable zu verstecken.
-    // Wirkt nicht, wenn debug.getmetatable aufgerufen wird.
+    // Translate attribute __metatable of meta. This is the value that is
+	// returned by getmetatable(obj). Trick to hide real metatable.
+    // Does not work if debug.getmetatable is called.
 	lua_pushliteral(L, "__metatable");
 	lua_pushvalue(L, methodTable );
 	lua_settable(L, metaTable);
@@ -1068,8 +797,7 @@ static void install_nlopt_opt_s( lua_State *L, const luaL_reg* ms )
 	lua_pushcfunction(L, tostring );
 	lua_rawset(L, metaTable);
 
-	for( const luaL_reg* l = ms; l && l->name; l++ )
-	{
+	for( const luaL_Reg* l = ms; l && l->name; l++ ){
 		lua_pushstring(L, l->name);
 		lua_pushcfunction(L, l->func );
 		lua_rawset(L, methodTable);
@@ -1080,15 +808,13 @@ static void install_nlopt_opt_s( lua_State *L, const luaL_reg* ms )
 }
 
 #ifdef _WIN32
-extern "C"
-{
-__declspec(dllexport) 
+extern "C" __declspec(dllexport) 
 #else
-	LUALIB_API 
+LUALIB_API 
 #endif
-int luaopen_LuaNLopt(lua_State *L)
-{
-    luaL_register( L, LIBNAME, Reg );
+int luaopen_LuaNLopt(lua_State *L){
+	luaL_newlib(L, Reg);
+	
     lua_pushliteral( L, "libversion" );			
     lua_pushliteral( L, LIBVERSION );
     lua_settable( L, -3 );
@@ -1156,6 +882,3 @@ int luaopen_LuaNLopt(lua_State *L)
 
     return 1;
 }
-#ifdef _WIN32
-}
-#endif
